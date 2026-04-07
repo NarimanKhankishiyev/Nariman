@@ -7,92 +7,118 @@
 
   <style>
     body {
-      font-family: Arial, sans-serif;
-      background: #f4f4f9;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f0f2f5;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 20px;
+      padding: 40px 20px;
       margin: 0;
     }
-    .container {
+
+    /* Форма и карточки теперь одной ширины */
+    .container, .post {
       width: 100%;
-      max-width: 500px;
+      max-width: 500px; 
       background: white;
-      padding: 20px;
+      padding: 25px;
       border-radius: 12px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      box-sizing: border-box;
       margin-bottom: 20px;
     }
-    input {
+
+    input[type="text"], input[type="email"] {
       width: 100%;
       padding: 12px;
-      margin: 8px 0;
-      border: 1px solid #ccc;
-      border-radius: 6px;
+      margin: 10px 0;
+      border: 1px solid #ddd;
+      border-radius: 8px;
       box-sizing: border-box;
+      font-size: 16px;
     }
+
     #mainBtn {
       width: 100%;
-      padding: 12px;
+      padding: 14px;
       border: none;
-      border-radius: 6px;
+      border-radius: 8px;
       cursor: pointer;
       background: #ffb400;
       color: white;
       font-weight: bold;
+      font-size: 16px;
     }
+
     #mainBtn:disabled {
       background: #ccc;
     }
+
+    /* ИСПРАВЛЕННЫЙ ЧЕКБОКС: компактный и по центру */
     .captcha-container {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin: 10px 0;
-      font-size: 14px;
+      justify-content: center;
+      gap: 10px;
+      margin: 10px 0 20px 0;
+      padding: 10px;
+      background: #fafafa;
+      border-radius: 8px;
     }
+
+    .captcha-container input[type="checkbox"] {
+      width: 18px !important; /* Убираем растягивание */
+      height: 18px !important;
+      margin: 0;
+      cursor: pointer;
+    }
+
+    .captcha-container label {
+      cursor: pointer;
+      font-size: 15px;
+      color: #555;
+    }
+
+    /* Оформление постов в ленте */
     .post {
-      width: 100%;
-      max-width: 500px;
-      background: white;
-      border: 1px solid #eee;
-      border-radius: 10px;
-      padding: 15px;
-      margin-top: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      position: relative;
     }
+
+    .time {
+      position: absolute;
+      top: 20px;
+      right: 25px;
+      color: #999;
+      font-size: 12px;
+    }
+
     .actions {
       display: flex;
       gap: 10px;
-      align-items: center;
-      margin-top: 10px;
+      margin-top: 15px;
     }
-    .like-btn {
-      background: #fff3cd;
+
+    .like-btn, .dislike-btn {
       border: none;
-      padding: 6px 12px;
+      padding: 8px 15px;
       border-radius: 20px;
       cursor: pointer;
+      font-weight: bold;
+      transition: 0.2s;
     }
-    .dislike-btn {
-      background: #eee;
-      border: none;
-      padding: 6px 12px;
-      border-radius: 20px;
-      cursor: pointer;
-    }
-    .time {
-      float: right;
-      color: #888;
-      font-size: 12px;
-    }
+
+    .like-btn { background: #fff3cd; color: #856404; }
+    .dislike-btn { background: #f1f1f1; color: #333; }
+    
+    .like-btn:hover { background: #ffeeba; }
+    .dislike-btn:hover { background: #e2e2e2; }
+
   </style>
 </head>
 <body>
 
   <div class="container">
-    <h3>Отправить заявку</h3>
+    <h3 style="margin-top: 0;">Отправить заявку</h3>
     <form id="feedbackForm">
       <input type="text" id="userName" placeholder="Ваше имя" required />
       <input type="email" id="userEmail" placeholder="Ваш Email" required />
@@ -127,22 +153,22 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    // Функции лайка и дизлайка (отдельно!)
+    // Функции лайка и дизлайка
     window.processLike = async (id) => {
       const docRef = doc(db, "requests", id);
       try {
         await updateDoc(docRef, { likes: increment(1) });
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error("Ошибка лайка:", e); }
     };
 
     window.processDislike = async (id) => {
       const docRef = doc(db, "requests", id);
       try {
         await updateDoc(docRef, { likes: increment(-1) });
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error("Ошибка дизлайка:", e); }
     };
 
-    // Отправка формы
+    // Обработка формы
     document.getElementById("feedbackForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const btn = document.getElementById("mainBtn");
@@ -159,14 +185,15 @@
           timestamp: serverTimestamp()
         });
         document.getElementById("feedbackForm").reset();
-        alert("Готово! Данные в облаке.");
+        alert("Заявка успешно отправлена!");
       } catch (e) {
-        alert("Ошибка доступа. Проверьте правила Firestore!");
+        alert("Ошибка! Проверьте правила доступа в Firebase.");
+        console.error(e);
       }
       btn.disabled = false;
     });
 
-    // Чтение данных
+    // Получение данных в реальном времени
     const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
     onSnapshot(q, (snapshot) => {
       const feed = document.getElementById("feed");
@@ -176,8 +203,8 @@
         feed.innerHTML += `
           <div class="post">
             <span class="time">${data.timestamp ? data.timestamp.toDate().toLocaleTimeString() : "..."}</span>
-            <b>${data.name}</b>
-            <p>${data.email}</p>
+            <b style="font-size: 18px;">${data.name}</b>
+            <p style="color: #666; margin: 5px 0;">${data.email}</p>
             <div class="actions">
               <button class="like-btn" onclick="processLike('${item.id}')">👍 ${data.likes || 0}</button>
               <button class="dislike-btn" onclick="processDislike('${item.id}')">👎</button>
