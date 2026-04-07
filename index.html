@@ -8,14 +8,13 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      background: #f4f7f6;
+      background: #f4f4f9;
       display: flex;
       flex-direction: column;
       align-items: center;
       padding: 20px;
       margin: 0;
     }
-
     .container {
       width: 100%;
       max-width: 500px;
@@ -25,7 +24,6 @@
       box-shadow: 0 4px 15px rgba(0,0,0,0.08);
       margin-bottom: 20px;
     }
-
     input {
       width: 100%;
       padding: 12px;
@@ -34,8 +32,7 @@
       border-radius: 6px;
       box-sizing: border-box;
     }
-
-    button {
+    #mainBtn {
       width: 100%;
       padding: 12px;
       border: none;
@@ -45,7 +42,16 @@
       color: white;
       font-weight: bold;
     }
-
+    #mainBtn:disabled {
+      background: #ccc;
+    }
+    .captcha-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 10px 0;
+      font-size: 14px;
+    }
     .post {
       width: 100%;
       max-width: 500px;
@@ -56,26 +62,30 @@
       margin-top: 12px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.05);
     }
-
+    .actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 10px;
+    }
     .like-btn {
-      width: auto;
       background: #fff3cd;
-      color: black;
+      border: none;
       padding: 6px 12px;
       border-radius: 20px;
       cursor: pointer;
-      margin-top: 10px;
     }
-
+    .dislike-btn {
+      background: #eee;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+    }
     .time {
       float: right;
       color: #888;
       font-size: 12px;
-    }
-
-    #feed {
-      width: 100%;
-      max-width: 500px;
     }
   </style>
 </head>
@@ -86,6 +96,12 @@
     <form id="feedbackForm">
       <input type="text" id="userName" placeholder="Ваше имя" required />
       <input type="email" id="userEmail" placeholder="Ваш Email" required />
+      
+      <div class="captcha-container">
+        <input type="checkbox" id="notRobot" required>
+        <label for="notRobot">Я не робот</label>
+      </div>
+
       <button type="submit" id="mainBtn">Отправить в облако</button>
     </form>
   </div>
@@ -95,16 +111,8 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
     import {
-      getFirestore,
-      collection,
-      addDoc,
-      query,
-      orderBy,
-      onSnapshot,
-      serverTimestamp,
-      updateDoc,
-      doc,
-      increment
+      getFirestore, collection, addDoc, query, orderBy, onSnapshot,
+      serverTimestamp, updateDoc, doc, increment
     } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
     const firebaseConfig = {
@@ -119,21 +127,24 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
+    // Функции лайка и дизлайка (отдельно!)
     window.processLike = async (id) => {
       const docRef = doc(db, "requests", id);
-
       try {
-        await updateDoc(docRef, {
-          likes: increment(1)
-        });
-      } catch (e) {
-        console.error("Ошибка лайка:", e.message);
-      }
+        await updateDoc(docRef, { likes: increment(1) });
+      } catch (e) { console.error(e); }
     };
 
+    window.processDislike = async (id) => {
+      const docRef = doc(db, "requests", id);
+      try {
+        await updateDoc(docRef, { likes: increment(-1) });
+      } catch (e) { console.error(e); }
+    };
+
+    // Отправка формы
     document.getElementById("feedbackForm").addEventListener("submit", async (e) => {
       e.preventDefault();
-
       const btn = document.getElementById("mainBtn");
       btn.disabled = true;
 
@@ -147,41 +158,33 @@
           likes: 0,
           timestamp: serverTimestamp()
         });
-
         document.getElementById("feedbackForm").reset();
-        alert("Готово! Данные сохранены в Firebase.");
+        alert("Готово! Данные в облаке.");
       } catch (e) {
-        alert("Ошибка безопасности: данные отклонены сервером.");
-        console.error(e);
+        alert("Ошибка доступа. Проверьте правила Firestore!");
       }
-
       btn.disabled = false;
     });
 
+    // Чтение данных
     const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
-
     onSnapshot(q, (snapshot) => {
       const feed = document.getElementById("feed");
       feed.innerHTML = "";
-
       snapshot.forEach((item) => {
         const data = item.data();
-
         feed.innerHTML += `
           <div class="post">
-            <span class="time">
-              ${data.timestamp ? data.timestamp.toDate().toLocaleTimeString() : "..."}
-            </span>
+            <span class="time">${data.timestamp ? data.timestamp.toDate().toLocaleTimeString() : "..."}</span>
             <b>${data.name}</b>
-            <p style="margin: 5px 0;">${data.email}</p>
-            <button class="like-btn" onclick="processLike('${item.id}')">
-              👍 ${data.likes || 0}
-            </button>
-          </div>
-        `;
+            <p>${data.email}</p>
+            <div class="actions">
+              <button class="like-btn" onclick="processLike('${item.id}')">👍 ${data.likes || 0}</button>
+              <button class="dislike-btn" onclick="processDislike('${item.id}')">👎</button>
+            </div>
+          </div>`;
       });
     });
   </script>
-
 </body>
 </html>
