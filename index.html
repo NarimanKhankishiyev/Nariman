@@ -489,31 +489,33 @@
       });
     }
 
-    async function openDmChat(user) {
-      if (!auth.currentUser || !user) return;
+   async function openDmChat(user) {
+  if (!auth.currentUser || !user) return;
 
-      currentChatId = buildChatId(auth.currentUser.uid, user.uid);
+  currentChatId = buildChatId(auth.currentUser.uid, user.uid);
 
-      const chatRef = doc(db, "chats", currentChatId);
-      const chatSnap = await getDoc(chatRef);
+  const chatRef = doc(db, "chats", currentChatId);
 
-      if (!chatSnap.exists()) {
-        await setDoc(chatRef, {
-          members: [auth.currentUser.uid, user.uid],
-          memberNames: {
-            [auth.currentUser.uid]: auth.currentUser.displayName || auth.currentUser.email || "Я",
-            [user.uid]: user.name || user.email || "Собеседник"
-          },
-          createdAt: serverTimestamp(),
-          lastMessage: "",
-          lastMessageAt: serverTimestamp(),
-          lastSenderId: ""
-        });
-      }
+  try {
+    await setDoc(chatRef, {
+      members: [auth.currentUser.uid, user.uid],
+      memberNames: {
+        [auth.currentUser.uid]: auth.currentUser.displayName || auth.currentUser.email || "Я",
+        [user.uid]: user.name || user.email || "Собеседник"
+      },
+      createdAt: serverTimestamp(),
+      lastMessage: "",
+      lastMessageAt: serverTimestamp(),
+      lastSenderId: ""
+    }, { merge: true });
 
-      dmChatBox.style.display = "block";
-      subscribeToDmMessages(currentChatId);
-    }
+    dmChatBox.style.display = "block";
+    subscribeToDmMessages(currentChatId);
+  } catch (error) {
+    console.error("Ошибка открытия чата:", error);
+    alert("Не удалось открыть чат: " + error.message);
+  }
+}
 
     function subscribeToDmMessages(chatId) {
       if (unsubscribeDmMessages) {
