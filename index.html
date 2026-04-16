@@ -164,6 +164,138 @@
       color: #666;
       font-size: 14px;
     }
+
+    /* ===== ДОБАВЛЕНО: стили DM, старые стили не тронуты ===== */
+
+    .dm-panel {
+      margin-bottom: 20px;
+    }
+
+    #dmUsersList {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .dm-user {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border: 1px solid #eee;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #fff;
+      transition: 0.2s;
+    }
+
+    .dm-user:hover {
+      background: #f7faff;
+    }
+
+    .dm-user.active {
+      background: #eef5ff;
+      border-color: #d5e7ff;
+    }
+
+    .dm-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: #d81b60;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 14px;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .dm-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .dm-user-info {
+      min-width: 0;
+    }
+
+    .dm-user-name {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .dm-user-email {
+      font-size: 11px;
+      color: #888;
+      line-height: 1.2;
+      margin-top: 2px;
+      word-break: break-word;
+    }
+
+    .dm-messages {
+      margin-top: 10px;
+      border: 1px solid #eee;
+      border-radius: 8px;
+      background: #fff;
+      min-height: 180px;
+      max-height: 280px;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    .dm-message {
+      max-width: 72%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      font-size: 13px;
+      line-height: 1.3;
+      word-break: break-word;
+    }
+
+    .dm-message.me {
+      background: #1677f2;
+      color: white;
+      margin-left: auto;
+    }
+
+    .dm-message.other {
+      background: #f1f1f1;
+      color: #111;
+      margin-right: auto;
+    }
+
+    .dm-time {
+      display: block;
+      font-size: 10px;
+      opacity: 0.75;
+      margin-top: 4px;
+    }
+
+    .dm-composer {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      align-items: center;
+    }
+
+    #dmMessageInput {
+      flex: 1;
+    }
+
+    #dmSendBtn {
+      padding: 12px 14px;
+      border: 1px solid #bbb;
+      border-radius: 6px;
+      background: white;
+      cursor: pointer;
+      font-size: 13px;
+    }
   </style>
 </head>
 <body>
@@ -196,6 +328,26 @@
     </form>
   </div>
 
+  <!-- ===== ДОБАВЛЕНО: блок личных сообщений ===== -->
+  <div class="container dm-panel" id="dmPanel" style="display: none;">
+    <h3 style="margin: 0 0 15px 0;">Личные сообщения (DM)</h3>
+
+    <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+      Выберите собеседника:
+    </div>
+
+    <div id="dmUsersList"></div>
+
+    <div id="dmChatBox" style="display: none; margin-top: 14px;">
+      <div id="dmMessages" class="dm-messages"></div>
+
+      <div class="dm-composer">
+        <input type="text" id="dmMessageInput" placeholder="Ваше сообщение..." />
+        <button type="button" id="dmSendBtn">Отправить</button>
+      </div>
+    </div>
+  </div>
+
   <div id="feed"></div>
 
   <script type="module">
@@ -210,7 +362,9 @@
       serverTimestamp,
       updateDoc,
       doc,
-      increment
+      increment,
+      setDoc,
+      getDoc
     } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
     import {
       getAuth,
@@ -240,6 +394,19 @@
     const authMessage = document.getElementById("authMessage");
     const formContainer = document.getElementById("formContainer");
 
+    /* ===== ДОБАВЛЕНО: переменные DM ===== */
+    const dmPanel = document.getElementById("dmPanel");
+    const dmUsersList = document.getElementById("dmUsersList");
+    const dmChatBox = document.getElementById("dmChatBox");
+    const dmMessages = document.getElementById("dmMessages");
+    const dmMessageInput = document.getElementById("dmMessageInput");
+    const dmSendBtn = document.getElementById("dmSendBtn");
+
+    let currentDmUser = null;
+    let currentChatId = null;
+    let unsubscribeDmMessages = null;
+    let unsubscribeDmUsers = null;
+
     loginBtn.addEventListener("click", async () => {
       try {
         await signInWithPopup(auth, provider);
@@ -258,7 +425,181 @@
       }
     });
 
-    onAuthStateChanged(auth, (user) => {
+    /* ===== ДОБАВЛЕНО: функции DM ===== */
+
+    function getAvatarLetter(name) {
+      return (name || "?").trim().charAt(0).toUpperCase();
+    }
+
+    function buildChatId(uid1, uid2) {
+      return [uid1, uid2].sort().join("_");
+    }
+
+    async function saveCurrentUserForDM(user) {
+      if (!user) return;
+
+      await setDoc(doc(db, "users", user.uid), {
+        uid: user.uid,
+        name: user.displayName || "Без имени",
+        email: user.email || "",
+        photoURL: user.photoURL || "",
+        createdAt: serverTimestamp(),
+        lastSeen: serverTimestamp()
+      }, { merge: true });
+    }
+
+    function loadDmUsers() {
+      if (!auth.currentUser) return;
+
+      if (unsubscribeDmUsers) {
+        unsubscribeDmUsers();
+      }
+
+      const usersRef = query(collection(db, "users"), orderBy("name"));
+
+      unsubscribeDmUsers = onSnapshot(usersRef, (snapshot) => {
+        dmUsersList.innerHTML = "";
+
+        snapshot.forEach((docSnap) => {
+          const user = docSnap.data();
+
+          if (user.uid === auth.currentUser.uid) return;
+
+          const item = document.createElement("div");
+          item.className = "dm-user" + (currentDmUser?.uid === user.uid ? " active" : "");
+
+          item.innerHTML = `
+            <div class="dm-avatar">
+              ${user.photoURL ? `<img src="${user.photoURL}" alt="avatar">` : getAvatarLetter(user.name)}
+            </div>
+            <div class="dm-user-info">
+              <div class="dm-user-name">${user.name || "Без имени"}</div>
+              <div class="dm-user-email">${user.email || ""}</div>
+            </div>
+          `;
+
+          item.addEventListener("click", async () => {
+            currentDmUser = user;
+            await openDmChat(user);
+            loadDmUsers();
+          });
+
+          dmUsersList.appendChild(item);
+        });
+      });
+    }
+
+    async function openDmChat(user) {
+      if (!auth.currentUser || !user) return;
+
+      currentChatId = buildChatId(auth.currentUser.uid, user.uid);
+
+      const chatRef = doc(db, "chats", currentChatId);
+      const chatSnap = await getDoc(chatRef);
+
+      if (!chatSnap.exists()) {
+        await setDoc(chatRef, {
+          members: [auth.currentUser.uid, user.uid],
+          memberNames: {
+            [auth.currentUser.uid]: auth.currentUser.displayName || auth.currentUser.email || "Я",
+            [user.uid]: user.name || user.email || "Собеседник"
+          },
+          createdAt: serverTimestamp(),
+          lastMessage: "",
+          lastMessageAt: serverTimestamp(),
+          lastSenderId: ""
+        });
+      }
+
+      dmChatBox.style.display = "block";
+      subscribeToDmMessages(currentChatId);
+    }
+
+    function subscribeToDmMessages(chatId) {
+      if (unsubscribeDmMessages) {
+        unsubscribeDmMessages();
+      }
+
+      const messagesRef = query(
+        collection(db, "chats", chatId, "messages"),
+        orderBy("createdAt", "asc")
+      );
+
+      unsubscribeDmMessages = onSnapshot(messagesRef, (snapshot) => {
+        dmMessages.innerHTML = "";
+
+        snapshot.forEach((docSnap) => {
+          const msg = docSnap.data();
+          const isMe = msg.senderId === auth.currentUser.uid;
+
+          const div = document.createElement("div");
+          div.className = "dm-message " + (isMe ? "me" : "other");
+
+          const timeText = msg.createdAt
+            ? msg.createdAt.toDate().toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit"
+              })
+            : "";
+
+          div.innerHTML = `
+            <div>${msg.text || ""}</div>
+            <span class="dm-time">${timeText}</span>
+          `;
+
+          dmMessages.appendChild(div);
+        });
+
+        dmMessages.scrollTop = dmMessages.scrollHeight;
+      });
+    }
+
+    async function sendDmMessage() {
+      const text = dmMessageInput.value.trim();
+
+      if (!auth.currentUser) {
+        alert("Сначала войдите через Google");
+        return;
+      }
+
+      if (!currentDmUser || !currentChatId) {
+        alert("Сначала выберите собеседника");
+        return;
+      }
+
+      if (!text) return;
+
+      try {
+        await addDoc(collection(db, "chats", currentChatId, "messages"), {
+          text,
+          senderId: auth.currentUser.uid,
+          senderName: auth.currentUser.displayName || auth.currentUser.email || "Пользователь",
+          createdAt: serverTimestamp()
+        });
+
+        await updateDoc(doc(db, "chats", currentChatId), {
+          lastMessage: text,
+          lastMessageAt: serverTimestamp(),
+          lastSenderId: auth.currentUser.uid
+        });
+
+        dmMessageInput.value = "";
+      } catch (error) {
+        console.error("Ошибка отправки DM:", error);
+        alert("Ошибка отправки сообщения: " + error.message);
+      }
+    }
+
+    dmSendBtn.addEventListener("click", sendDmMessage);
+
+    dmMessageInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        sendDmMessage();
+      }
+    });
+
+    onAuthStateChanged(auth, async (user) => {
       if (user) {
         loginBtn.style.display = "none";
         logoutBtn.style.display = "block";
@@ -278,6 +619,11 @@
         if (user.email) {
           document.getElementById("userEmail").value = user.email;
         }
+
+        /* ===== ДОБАВЛЕНО: запуск DM после входа ===== */
+        dmPanel.style.display = "block";
+        await saveCurrentUserForDM(user);
+        loadDmUsers();
       } else {
         loginBtn.style.display = "block";
         logoutBtn.style.display = "none";
@@ -285,6 +631,24 @@
         formContainer.style.display = "none";
         authMessage.textContent = "Чтобы отправлять заявки, войдите через Google.";
         document.getElementById("feedbackForm").reset();
+
+        /* ===== ДОБАВЛЕНО: сброс DM после выхода ===== */
+        dmPanel.style.display = "none";
+        dmUsersList.innerHTML = "";
+        dmMessages.innerHTML = "";
+        dmChatBox.style.display = "none";
+        currentDmUser = null;
+        currentChatId = null;
+
+        if (unsubscribeDmMessages) {
+          unsubscribeDmMessages();
+          unsubscribeDmMessages = null;
+        }
+
+        if (unsubscribeDmUsers) {
+          unsubscribeDmUsers();
+          unsubscribeDmUsers = null;
+        }
       }
     });
 
